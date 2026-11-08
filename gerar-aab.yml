@@ -1,0 +1,91 @@
+name: 2 - Gerar AAB para a Google Play
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Versão exibida na loja (ex.: 1.0.0)"
+        default: "1.0.0"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - name: Instalar dependências
+        run: npm install
+      - name: Criar projeto Android e ícones
+        run: |
+          npx cap add android
+          npx capacitor-assets generate --android --assetPath assets
+          npx cap sync android
+      - name: Ativar impressao e PDF no Android
+        run: |
+          d=android/app/src/main/java/br/com/recipegram/app
+          mkdir -p "$d"
+          cat > "$d/MainActivity.java" <<'JAVA'
+          package br.com.recipegram.app;
+
+          import android.os.Bundle;
+          import android.print.PrintAttributes;
+          import android.print.PrintDocumentAdapter;
+          import android.print.PrintManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+            @Override
+            public void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              final WebView web = getBridge().getWebView();
+              web.addJavascriptInterface(new Object() {
+                @JavascriptInterface
+                public void print() {
+                  runOnUiThread(new Runnable() {
+                    public void run() {
+                      PrintManager pm = (PrintManager) getSystemService(PRINT_SERVICE);
+                      PrintDocumentAdapter adapter = web.createPrintDocumentAdapter("Doce Medida");
+                      pm.print("Doce Medida", adapter, new PrintAttributes.Builder().build());
+                    }
+                  });
+                }
+              }, "AndroidPrint");
+            }
+          }
+          JAVA
+      - name: Mirar Android 16 (API 36)
+        run: |
+          f=android/variables.gradle
+          sed -i -E 's/compileSdkVersion = [0-9]+/compileSdkVersion = 36/; s/targetSdkVersion = [0-9]+/targetSdkVersion = 36/' "$f"
+          cat "$f"
+      - name: Número da versão
+        run: |
+          g=android/app/build.gradle
+          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"${{ inputs.version_name }}\"/" "$g"
+          grep -nE "versionCode|versionName" "$g"
+      - name: Compilar AAB e APK de teste
+        working-directory: android
+        run: ./gradlew bundleRelease assembleDebug
+      - name: Assinar AAB
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$KS" | base64 -d > upload.jks
+          jarsigner -keystore upload.jks -storepass "$KS_PASS" -keypass "$KEY_PASS" \
+            -sigalg SHA256withRSA -digestalg SHA-256 \
+            -signedjar recipegram.aab android/app/build/outputs/bundle/release/app-release.aab "$KEY_ALIAS"
+          jarsigner -verify recipegram.aab
+          rm -f upload.jks
+          cp android/app/build/outputs/apk/debug/app-debug.apk recipegram-teste.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recipegram
+          path: |
+            recipegram.aab
+            recipegram-teste.apk

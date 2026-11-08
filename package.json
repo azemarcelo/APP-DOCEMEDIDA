@@ -1,0 +1,18 @@
+{
+  "name": "recipegram",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Doce Medida: receitas em gramas, ajuste de rendimento e lista de compras. Funciona sem internet.",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "latest",
+    "@capacitor/core": "latest",
+    "cordova-plugin-purchase": "^13.15.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "latest",
+    "@capacitor/cli": "latest"
+  }
+}

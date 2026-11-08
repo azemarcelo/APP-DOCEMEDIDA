@@ -1,0 +1,27 @@
+name: 1 - Criar chave de envio (só uma vez)
+on: workflow_dispatch
+jobs:
+  chave:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - name: Gerar chave
+        run: |
+          PASS=$(openssl rand -hex 16)
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$PASS" -keypass "$PASS" -dname "CN=Recipegram, O=Recipegram, C=BR"
+          {
+            echo "ANDROID_KEY_ALIAS=upload"
+            echo "ANDROID_KEYSTORE_PASSWORD=$PASS"
+            echo "ANDROID_KEY_PASSWORD=$PASS"
+            echo "ANDROID_KEYSTORE_BASE64="
+            base64 -w0 upload.jks
+            echo
+          } > chave-de-upload.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chave-de-upload
+          path: chave-de-upload.txt
+          retention-days: 1
